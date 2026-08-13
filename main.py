@@ -155,9 +155,16 @@ def _yt_download(url: str, tid: str):
         "--write-thumbnail", "--convert-thumbnails", "jpg",
         "--no-playlist",
         "--no-warnings",
+        "--print", "TITLE=%(title)s",
         url,
     ]
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+    # título automático del video (yt-dlp imprime "TITLE=..." con --print)
+    auto_title = ""
+    for line in r.stdout.splitlines():
+        if line.startswith("TITLE="):
+            auto_title = line[len("TITLE="):].strip()
+            break
     # encontrar el archivo descargado
     files = sorted(TRACKS.glob(tid + ".*"))
     video = next((f for f in files if f.suffix in (".mp4", ".webm", ".mkv")), None)
@@ -173,7 +180,7 @@ def _yt_download(url: str, tid: str):
     for f in TRACKS.glob(tid + ".*"):
         if f.suffix in (".webp", ".png", ".jpeg"):
             f.unlink(missing_ok=True)
-    return {"ok": True, "mp3": mp3.name}
+    return {"ok": True, "mp3": mp3.name, "title": auto_title}
 
 class YTReq(BaseModel):
     url: str
@@ -274,8 +281,6 @@ def yt_stream(url: str = "", title: str = ""):
 def youtube(req: YTReq):
     lib = load_lib()
     tid = uuid.uuid4().hex[:10]
-    title = (req.title or "Video de YouTube").strip()
-    artist = req.artist or "YouTube"
     # correr en thread para no bloquear (timeout largo)
     res = _yt_download(req.url, tid)
     if "error" in res:
@@ -283,6 +288,8 @@ def youtube(req: YTReq):
     mp3 = TRACKS / res["mp3"]
     dur = probe_duration(mp3)
     thumb = tid if (THUMBS / (tid + ".jpg")).exists() else ""
+    title = (res.get("title") or req.title or "Video de YouTube").strip()
+    artist = req.artist or "YouTube"
     tr = {"id": tid, "title": title, "artist": artist, "file": res["mp3"], "dur": dur, "thumb": thumb, "source": "youtube", "url": req.url}
     lib["tracks"].append(tr)
     save_lib(lib)
