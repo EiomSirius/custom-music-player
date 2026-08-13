@@ -1,4 +1,4 @@
-import os, re, subprocess, uuid, json, shutil, threading
+import os, re, subprocess, uuid, json, shutil, threading, time
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -140,8 +140,26 @@ async def upload(files: list[UploadFile] = File(...)):
     return {"added": [t for t in out if "error" not in t], "errors": [t for t in out if "error" in t]}
 
 # ---------- YouTube ----------
+def _yt_title(url: str):
+    """Título del video con llamada ligera (solo metadata). Reintenta ante 429."""
+    cmd = [
+        "yt-dlp", "--proxy", YT_PROXY, "--js-runtimes", "node",
+        "--remote-components", "ejs:github", "--extractor-args", YT_EXTRACTOR_ARGS,
+        "--skip-download", "--no-playlist", "--no-warnings",
+        "--print", "%(title)s", url,
+    ]
+    for attempt in range(3):
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if r.returncode == 0 and r.stdout.strip():
+            return r.stdout.strip().splitlines()[0]
+        if "429" in r.stderr:
+            time.sleep(20 * (attempt + 1))
+            continue
+        break
+    return ""
+
 def _yt_download(url: str, tid: str):
-    """Descarga audio de YouTube con la receta WARP. Corre en thread."""
+    """Descarga audio de YouTube con la receta WARP. Reintenta ante 429. Corre en thread."""
     out_template = str(TRACKS / tid) + ".%(ext)s"
     cmd = [
         "yt-dlp",
@@ -155,19 +173,18 @@ def _yt_download(url: str, tid: str):
         "--write-thumbnail", "--convert-thumbnails", "jpg",
         "--no-playlist",
         "--no-warnings",
-        "--print", "TITLE=%(title)s",
         url,
     ]
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
-    # título automático del video (yt-dlp imprime "TITLE=..." con --print)
-    auto_title = ""
-    for line in r.stdout.splitlines():
-        if line.startswith("TITLE="):
-            auto_title = line[len("TITLE="):].strip()
+    for attempt in range(3):
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+        files = sorted(TRACKS.glob(tid + ".*"))
+        video = next((f for f in files if f.suffix in (".mp4", ".webm", ".mkv")), None)
+        if video:
             break
-    # encontrar el archivo descargado
-    files = sorted(TRACKS.glob(tid + ".*"))
-    video = next((f for f in files if f.suffix in (".mp4", ".webm", ".mkv")), None)
+        if "429" in r.stderr or "Too Many Requests" in r.stderr:
+            time.sleep(20 * (attempt + 1))
+            continue
+        return {"error": r.stderr[-500:] if r.stderr else "descarga fallida"}
     if not video:
         return {"error": r.stderr[-500:] if r.stderr else "descarga fallida"}
     mp3 = TRACKS / (tid + ".mp3")
@@ -180,7 +197,7 @@ def _yt_download(url: str, tid: str):
     for f in TRACKS.glob(tid + ".*"):
         if f.suffix in (".webp", ".png", ".jpeg"):
             f.unlink(missing_ok=True)
-    return {"ok": True, "mp3": mp3.name, "title": auto_title}
+    return {"ok": True, "mp3": mp3.name}
 
 class YTReq(BaseModel):
     url: str
@@ -281,14 +298,16 @@ def yt_stream(url: str = "", title: str = ""):
 def youtube(req: YTReq):
     lib = load_lib()
     tid = uuid.uuid4().hex[:10]
-    # correr en thread para no bloquear (timeout largo)
+    # título automático (llamada ligera) + descarga
+    title = _yt_title(req.url)
     res = _yt_download(req.url, tid)
     if "error" in res:
         return JSONResponse({"error": res["error"]}, status_code=502)
     mp3 = TRACKS / res["mp3"]
     dur = probe_duration(mp3)
     thumb = tid if (THUMBS / (tid + ".jpg")).exists() else ""
-    title = (res.get("title") or req.title or "Video de YouTube").strip()
+    if not title:
+        title = req.title or "Video de YouTube"
     artist = req.artist or "YouTube"
     tr = {"id": tid, "title": title, "artist": artist, "file": res["mp3"], "dur": dur, "thumb": thumb, "source": "youtube", "url": req.url}
     lib["tracks"].append(tr)
