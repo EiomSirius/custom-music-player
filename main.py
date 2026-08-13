@@ -55,7 +55,7 @@ def probe_duration(path):
     r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1", str(path)],
                        capture_output=True, text=True, timeout=30)
     try:
-        return round(float(r.stdout.strip()))
+        return round(float(r.stdout.strip().split("=")[-1]))
     except Exception:
         return 0
 
