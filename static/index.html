@@ -73,10 +73,11 @@
   .modal.show { display: flex; }
   .sheet { background: var(--card); width: 100%; max-width: 480px; border-radius: 20px 20px 0 0; padding: 20px 18px calc(22px + env(safe-area-inset-bottom)); }
   .sheet h3 { font-size: 1.05rem; margin-bottom: 14px; }
-  .opt { display: flex; align-items: center; gap: 12px; padding: 13px; border-radius: 12px; background: var(--card2); margin-bottom: 8px; cursor: pointer; }
+  .opt { display: flex; align-items: center; gap: 12px; padding: 13px; border-radius: 12px; background: var(--card2); margin-bottom: 8px; cursor: pointer; transition: opacity .25s, filter .25s; }
   .opt .ic { font-size: 1.3rem; }
   .opt .tx { flex: 1; font-size: .9rem; font-weight: 600; }
   .opt .sub2 { display: block; font-size: .75rem; color: var(--sub); font-weight: 400; }
+  .opt.blurred { filter: blur(5px); opacity: .45; pointer-events: none; }
   .close { background: none; border: none; color: var(--sub); font-size: .9rem; cursor: pointer; padding: 6px; float: right; }
   .field { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,.12);
     background: var(--card2); color: var(--text); font-size: .95rem; margin-bottom: 10px; }
@@ -252,10 +253,13 @@ $("tab-playlists").onclick = () => { view = "playlists"; curPl = null; $("tab-tr
 const modal = $("modal");
 function showSheet(title) { $("sheetTitle").textContent = title; modal.classList.add("show"); }
 $("addBtn").onclick = () => showSheet("Añadir música");
-$("closeModal").onclick = () => { modal.classList.remove("show"); $("sheetMain").style.display = ""; $("sheetForm").style.display = "none"; $("plForm").style.display = "none"; };
+$("closeModal").onclick = () => { modal.classList.remove("show"); $("sheetMain").style.display = ""; $("sheetForm").style.display = "none"; $("plForm").style.display = "none"; unblurOpts(); };
 modal.onclick = e => { if (e.target === modal) $("closeModal").onclick(); };
 
-function resetForm() { $("sheetMain").style.display = ""; $("sheetForm").style.display = "none"; $("plForm").style.display = "none"; $("msg").textContent = ""; $("msg").className = "msg"; $("prog").style.display = "none"; }
+function resetForm() { $("sheetMain").style.display = ""; $("sheetForm").style.display = "none"; $("plForm").style.display = "none"; $("msg").textContent = ""; $("msg").className = "msg"; $("prog").style.display = "none"; unblurOpts(); }
+
+function blurOpts() { document.querySelectorAll(".opt").forEach(o => o.classList.add("blurred")); }
+function unblurOpts() { document.querySelectorAll(".opt").forEach(o => o.classList.remove("blurred")); }
 
 function doUpload(input, label, isFolder) {
   const files = [...input.files];
@@ -292,22 +296,34 @@ $("fileFolder").onchange = e => doUpload(e.target, "Subiendo carpeta…");
 $("fileVideo").onchange = e => doUpload(e.target, "Subiendo vídeos…");
 
 // YouTube
-$("optYoutube").onclick = () => { resetForm(); $("sheetForm").style.display = "block"; showSheet("Añadir desde YouTube"); setTimeout(() => $("ytUrl").focus(), 300); };
+$("optYoutube").onclick = () => { resetForm(); blurOpts(); $("sheetForm").style.display = "block"; showSheet("Añadir desde YouTube"); setTimeout(() => $("ytUrl").focus(), 300); };
 // YouTube — reproducción con caché + seek (barra funcional)
 $("ytPlay").onclick = async () => {
   const url = $("ytUrl").value.trim();
   if (!url) { $("msg").textContent = "Pega un enlace de YouTube"; $("msg").classList.add("err"); return; }
   const title = $("ytTitle").value.trim() || "YouTube";
   const artist = $("ytArtist").value.trim() || "YouTube";
-  $("msg").textContent = "Preparando (10-20 s la primera vez)…"; $("msg").className = "msg";
   $("ytPlay").disabled = true;
+  $("msg").textContent = "Preparando (10-20 s la primera vez)…"; $("msg").className = "msg";
   $("prog").style.display = "block"; $("progFill").style.width = "15%";
-  queue = [{id: "stream", title, artist, dur: 0, source: "stream", streamUrl: "/api/youtube/play?url=" + encodeURIComponent(url)}];
-  idx = 0; load(); play();
-  $("progFill").style.width = "90%";
-  $("msg").textContent = "✅ Reproduciendo — la barra ya salta"; $("msg").className = "msg";
-  modal.classList.remove("show");
-  setTimeout(() => { $("ytPlay").disabled = false; resetForm(); $("prog").style.display = "none"; }, 900);
+  try {
+    const r = await fetch("/api/youtube/prepare?url=" + encodeURIComponent(url), {method: "POST"});
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      $("msg").textContent = "Error: " + (d.detail || "no se pudo conectar").slice(0, 140); $("msg").classList.add("err");
+      $("ytPlay").disabled = false; $("prog").style.display = "none"; return;
+    }
+    const d = await r.json();
+    $("progFill").style.width = "90%";
+    queue = [{id: "stream", title, artist, dur: d.dur || 0, source: "stream", streamUrl: "/api/youtube/play?url=" + encodeURIComponent(url)}];
+    idx = 0; load(); play();
+    $("msg").textContent = "✅ Reproduciendo — la barra ya salta"; $("msg").className = "msg";
+    modal.classList.remove("show");
+    setTimeout(() => { $("ytPlay").disabled = false; resetForm(); $("prog").style.display = "none"; }, 900);
+  } catch(e) {
+    $("msg").textContent = "Error de conexión"; $("msg").classList.add("err");
+    $("ytPlay").disabled = false; $("prog").style.display = "none";
+  }
 };
 // YouTube — streaming en vivo (sin descargar)
 // (eliminado: el modo "Reproducir" ya hace streaming con barra; el stream puro sobra)
@@ -334,7 +350,7 @@ $("ytGo").onclick = async () => {
 };
 
 // playlist
-$("optPlaylist").onclick = () => { resetForm(); $("plForm").style.display = "block"; showSheet("Nueva lista"); };
+$("optPlaylist").onclick = () => { resetForm(); blurOpts(); $("plForm").style.display = "block"; showSheet("Nueva lista"); };
 $("plCreate").onclick = async () => {
   const name = $("plName").value.trim();
   if (!name) { $("msgPl").textContent = "Pon un nombre"; $("msgPl").classList.add("err"); return; }

@@ -185,23 +185,52 @@ import hashlib
 CACHE_DIR = Path("/tmp/ytcache")
 CACHE_DIR.mkdir(exist_ok=True)
 
+def _yt_cache_file(url: str):
+    """Descarga a /tmp si no está en caché; devuelve path del m4a (solo audio)."""
+    key = hashlib.md5(url.encode()).hexdigest()[:12]
+    m4a = CACHE_DIR / f"{key}.m4a"
+    if m4a.exists():
+        return m4a
+    mp4 = CACHE_DIR / f"{key}.mp4"
+    if not mp4.exists():
+        r = subprocess.run(
+            ["yt-dlp", "--proxy", YT_PROXY, "--js-runtimes", "node",
+             "--remote-components", "ejs:github", "--extractor-args", YT_EXTRACTOR_ARGS,
+             "--no-part", "-f", "18/bestaudio", "-o", str(mp4), url],
+            capture_output=True, text=True, timeout=600)
+        if r.returncode != 0 or not mp4.exists():
+            raise HTTPException(502, "no se pudo descargar: " + (r.stderr[-200:] if r.stderr else "desconocido"))
+    # extraer solo audio (m4a) para que suene en cualquier navegador (el mp4 con vídeo no siempre)
+    if not m4a.exists():
+        rr = subprocess.run(
+            ["ffmpeg", "-y", "-v", "error", "-i", str(mp4), "-vn", "-c:a", "copy", str(m4a)],
+            capture_output=True, text=True, timeout=600)
+        if rr.returncode != 0:
+            # fallback: transcodificar
+            rr = subprocess.run(
+                ["ffmpeg", "-y", "-v", "error", "-i", str(mp4), "-vn", "-acodec", "aac", "-b:a", "192k", str(m4a)],
+                capture_output=True, text=True, timeout=600)
+        mp4.unlink(missing_ok=True)
+        if rr.returncode != 0 or not m4a.exists():
+            raise HTTPException(502, "conversión fallida")
+    return m4a
+
 @app.get("/api/youtube/play")
 def yt_play(url: str = "", title: str = ""):
     """Descarga a caché en /tmp y sirve con soporte Range → el navegador puede saltar (seek)."""
     if not url:
         raise HTTPException(400, "falta url")
-    key = hashlib.md5(url.encode()).hexdigest()[:12]
-    out = CACHE_DIR / f"{key}.mp4"
-    if not out.exists():
-        r = subprocess.run(
-            ["yt-dlp", "--proxy", YT_PROXY, "--js-runtimes", "node",
-             "--remote-components", "ejs:github", "--extractor-args", YT_EXTRACTOR_ARGS,
-             "--no-part", "-f", "18/bestaudio", "-o", str(out), url],
-            capture_output=True, text=True, timeout=600)
-        if r.returncode != 0 or not out.exists():
-            raise HTTPException(502, "no se pudo descargar: " + (r.stderr[-200:] if r.stderr else "desconocido"))
+    out = _yt_cache_file(url)
     return FileResponse(out, media_type="audio/mp4",
                         headers={"Accept-Ranges": "bytes"})
+
+@app.post("/api/youtube/prepare")
+def yt_prepare(url: str = ""):
+    """Descarga a caché y devuelve {ok, size} — la UI lo usa para mostrar 'Preparando'."""
+    if not url:
+        raise HTTPException(400, "falta url")
+    out = _yt_cache_file(url)
+    return {"ok": True, "size": out.stat().st_size, "dur": probe_duration(out)}
 
 # ---------- Streaming en vivo de YouTube (sin descargar) ----------
 @app.get("/api/youtube/stream")
