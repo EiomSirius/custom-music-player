@@ -20,10 +20,33 @@ YT_EXTRACTOR_ARGS = "youtube:player_client=mweb,web,tv_downgraded"
 def load_lib():
     if LIB.exists():
         try:
-            return json.loads(LIB.read_text())
+            lib = json.loads(LIB.read_text())
         except Exception:
-            pass
-    return {"tracks": [], "playlists": []}
+            lib = {"tracks": [], "playlists": []}
+    else:
+        lib = {"tracks": [], "playlists": []}
+    _import_existing(lib)
+    return lib
+
+def _import_existing(lib):
+    """Importa mp3 que estén sueltos en MUSIC_DIR (no dentro de tracks/) al arrancar."""
+    import hashlib
+    known = {t["file"] for t in lib["tracks"]}
+    changed = False
+    for p in sorted(BASE.glob("*.mp3")):
+        if p.name in known:
+            continue
+        tid = hashlib.md5(p.name.encode()).hexdigest()[:10]
+        # mover a tracks/ para que el storage quede limpio
+        dest = TRACKS / p.name
+        if not dest.exists():
+            shutil.move(str(p), str(dest))
+        dur = probe_duration(dest)
+        lib["tracks"].append({"id": tid, "title": Path(p.name).stem, "artist": "", "file": p.name, "dur": dur, "thumb": "", "source": "import"})
+        known.add(p.name)
+        changed = True
+    if changed:
+        save_lib(lib)
 
 def save_lib(lib):
     LIB.write_text(json.dumps(lib, ensure_ascii=False, indent=1))
