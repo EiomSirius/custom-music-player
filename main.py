@@ -1,7 +1,7 @@
 import os, re, subprocess, uuid, json, shutil, threading
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional
@@ -179,6 +179,47 @@ class YTReq(BaseModel):
     url: str
     title: Optional[str] = None
     artist: Optional[str] = None
+
+# ---------- Streaming en vivo de YouTube (sin descargar) ----------
+@app.get("/api/youtube/stream")
+def yt_stream(url: str = "", title: str = ""):
+    """Transcodifica en vivo: yt-dlp → ffmpeg → mp3 por HTTP. No toca el disco."""
+    if not url:
+        raise HTTPException(400, "falta url")
+    import asyncio
+
+    def gen():
+        yt = subprocess.Popen(
+            ["yt-dlp", "--proxy", YT_PROXY, "--js-runtimes", "node",
+             "--remote-components", "ejs:github", "--extractor-args", YT_EXTRACTOR_ARGS,
+             "--no-part", "-f", "18/bestaudio/best", "-o", "-", url],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        ff = subprocess.Popen(
+            ["ffmpeg", "-v", "error", "-i", "pipe:0", "-vn",
+             "-acodec", "libmp3lame", "-q:a", "2", "-f", "mp3", "pipe:1"],
+            stdin=yt.stdout, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        if yt.stdout:
+            yt.stdout.close()
+        try:
+            while True:
+                chunk = ff.stdout.read(65536) if ff.stdout else b""
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            ff.terminate()
+            yt.terminate()
+            try:
+                ff.wait(timeout=3)
+            except Exception:
+                pass
+            try:
+                yt.wait(timeout=3)
+            except Exception:
+                pass
+
+    return StreamingResponse(gen(), media_type="audio/mpeg",
+                             headers={"Content-Disposition": f'inline; filename="stream.mp3"'})
 
 @app.post("/api/youtube")
 def youtube(req: YTReq):

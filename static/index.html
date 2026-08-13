@@ -142,7 +142,8 @@
       <input class="field" id="ytUrl" type="url" placeholder="https://www.youtube.com/watch?v=…">
       <input class="field" id="ytTitle" type="text" placeholder="Título (opcional)">
       <input class="field" id="ytArtist" type="text" placeholder="Artista (opcional)">
-      <button class="btn" id="ytGo">Descargar audio</button>
+      <button class="btn" id="ytStream">▶ Reproducir ahora (streaming)</button>
+      <button class="btn ghost" id="ytGo">💾 Descargar y guardar</button>
       <div class="progress" id="prog"><div class="fill" id="progFill"></div></div>
       <div class="msg" id="msg"></div>
       <button class="btn ghost" id="backMain">← Volver</button>
@@ -218,7 +219,7 @@ const esc = s => (s||"").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"
 function load() {
   const t = queue[idx];
   if (!t) return;
-  audio.src = `/api/tracks/${t.id}/file`;
+  audio.src = t.streamUrl || `/api/tracks/${t.id}/file`;
   audio.load();
   $("now").innerHTML = esc(t.title) + `<small>${esc(t.artist || "")} · ${idx+1}/${queue.length}</small>`;
   render(); update();
@@ -233,6 +234,10 @@ function update() { $("cur").textContent = fmt(audio.currentTime); $("tot").text
 audio.addEventListener("ended", next);
 audio.addEventListener("timeupdate", update);
 audio.addEventListener("loadedmetadata", update);
+audio.addEventListener("error", () => {
+  const t = queue[idx];
+  if (t && t.source === "stream") toast("No se pudo conectar con YouTube");
+});
 audio.addEventListener("play", () => $("play").classList.add("is-playing"));
 audio.addEventListener("pause", () => $("play").classList.remove("is-playing"));
 $("play").onclick = toggle; $("next").onclick = next; $("prev").onclick = prev;
@@ -287,6 +292,25 @@ $("fileVideo").onchange = e => doUpload(e.target, "Subiendo vídeos…");
 
 // YouTube
 $("optYoutube").onclick = () => { resetForm(); $("sheetForm").style.display = "block"; showSheet("Añadir desde YouTube"); setTimeout(() => $("ytUrl").focus(), 300); };
+// YouTube — streaming en vivo (sin descargar)
+$("ytStream").onclick = async () => {
+  const url = $("ytUrl").value.trim();
+  if (!url) { $("msg").textContent = "Pega un enlace de YouTube"; $("msg").classList.add("err"); return; }
+  const title = $("ytTitle").value.trim() || "YouTube (streaming)";
+  const artist = $("ytArtist").value.trim() || "YouTube";
+  $("msg").textContent = "Conectando…"; $("msg").className = "msg";
+  $("ytStream").disabled = true;
+  try {
+    queue = [{id: "stream", title, artist, dur: 0, source: "stream", streamUrl: "/api/youtube/stream?url=" + encodeURIComponent(url)}];
+    idx = 0; load(); play();
+    $("msg").textContent = "✅ Reproduciendo en directo"; $("msg").className = "msg";
+    modal.classList.remove("show");
+    setTimeout(() => { $("ytStream").disabled = false; resetForm(); }, 600);
+  } catch(e) {
+    $("msg").textContent = "No se pudo conectar"; $("msg").classList.add("err");
+    $("ytStream").disabled = false;
+  }
+};
 $("backMain").onclick = () => { resetForm(); showSheet("Añadir música"); };
 $("backMain2").onclick = () => { resetForm(); showSheet("Añadir música"); };
 $("ytGo").onclick = async () => {
