@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Custom Music Player</title>
+<style>
+  :root {
+    --bg: #0d0f14; --card: #171a22; --card2: #1e2230; --text: #eef1f7;
+    --sub: #9aa3b5; --accent: #7c8cff; --accent2: #ff7ca8; --ok: #7cffb0; --err: #ff7c7c;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh; display: flex; justify-content: center; padding: 20px 14px calc(170px + env(safe-area-inset-bottom)); }
+  .wrap { max-width: 480px; width: 100%; }
+  header { text-align: center; padding: 20px 0 14px; position: relative; }
+  header h1 { font-size: 1.3rem; font-weight: 700; letter-spacing: -0.02em; }
+  header p { color: var(--sub); font-size: .82rem; margin-top: 4px; }
+  .add-btn { position: fixed; right: 18px; bottom: calc(150px + env(safe-area-inset-bottom)); z-index: 50;
+    width: 56px; height: 56px; border-radius: 50%; border: none; cursor: pointer;
+    background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #0d0f14; font-size: 1.7rem;
+    box-shadow: 0 6px 22px rgba(124,140,255,.4); display: flex; align-items: center; justify-content: center; }
+  .tabs { display: flex; gap: 6px; margin: 14px 0 12px; }
+  .tabs button { flex: 1; padding: 9px; border-radius: 10px; border: none; cursor: pointer;
+    background: var(--card); color: var(--sub); font-size: .85rem; font-weight: 600; }
+  .tabs button.on { background: var(--card2); color: var(--text); outline: 1px solid rgba(124,140,255,.35); }
+  .track { display: flex; align-items: center; gap: 12px; padding: 11px 12px; background: var(--card);
+    border-radius: 14px; margin-bottom: 8px; cursor: pointer; transition: background .2s; }
+  .track:active { transform: scale(.99); }
+  .track.active { background: var(--card2); outline: 1px solid rgba(124,140,255,.4); }
+  .track .thumb { width: 42px; height: 42px; border-radius: 10px; flex-shrink: 0; object-fit: cover; background: var(--card2); }
+  .track .meta { flex: 1; min-width: 0; }
+  .track .t { font-size: .92rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .track .a { font-size: .78rem; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .track .dur { font-size: .73rem; color: var(--sub); flex-shrink: 0; }
+  .track .del { background: none; border: none; color: var(--sub); font-size: 1rem; cursor: pointer; padding: 4px; flex-shrink: 0; }
+  .track .del:hover { color: var(--err); }
+  .eq { display: none; width: 16px; height: 16px; flex-shrink: 0; }
+  .track.active .eq { display: block; }
+  .eq span { display: block; width: 3px; background: var(--accent); border-radius: 2px; animation: eqb 1s ease-in-out infinite; }
+  .eq span:nth-child(1) { height: 8px; } .eq span:nth-child(2) { height: 14px; animation-delay: .2s; }
+  .eq span:nth-child(3) { height: 10px; animation-delay: .4s; }
+  @keyframes eqb { 0%,100% { transform: scaleY(.5); } 50% { transform: scaleY(1); } }
+  .pl-row { display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: var(--card);
+    border-radius: 14px; margin-bottom: 8px; cursor: pointer; }
+  .pl-row .icon { font-size: 1.2rem; }
+  .pl-row .meta { flex: 1; }
+  .pl-row .n { font-weight: 600; font-size: .95rem; }
+  .pl-row .c { font-size: .78rem; color: var(--sub); }
+  .pl-row .del { background: none; border: none; color: var(--sub); cursor: pointer; font-size: 1rem; }
+  .empty { text-align: center; color: var(--sub); padding: 40px 0; font-size: .88rem; }
+  .player { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(13,15,20,.94);
+    backdrop-filter: blur(14px); border-top: 1px solid rgba(255,255,255,.07);
+    padding: 12px 18px calc(14px + env(safe-area-inset-bottom)); z-index: 40; }
+  .player .now { font-size: .88rem; font-weight: 600; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .player .now small { display: block; font-weight: 400; color: var(--sub); font-size: .76rem; }
+  .bar { height: 5px; background: rgba(255,255,255,.12); border-radius: 3px; margin: 10px 0 8px; overflow: hidden; cursor: pointer; }
+  .bar .fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 3px; }
+  .btns { display: flex; align-items: center; justify-content: center; gap: 26px; }
+  .btns button { background: none; border: none; color: var(--text); cursor: pointer; }
+  .btns .prev, .btns .next { font-size: 1.4rem; opacity: .85; }
+  .btns .play { width: 58px; height: 58px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #0d0f14; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 6px 20px rgba(124,140,255,.35); }
+  .btns .play svg { display: block; }
+  .btns .play .ic-pause { display: none; }
+  .btns .play.is-playing .ic-play { display: none; }
+  .btns .play.is-playing .ic-pause { display: block; }
+  .times { display: flex; justify-content: space-between; font-size: .7rem; color: var(--sub); }
+  /* modal */
+  .modal { position: fixed; inset: 0; background: rgba(5,6,10,.7); z-index: 60; display: none;
+    align-items: flex-end; justify-content: center; }
+  .modal.show { display: flex; }
+  .sheet { background: var(--card); width: 100%; max-width: 480px; border-radius: 20px 20px 0 0; padding: 20px 18px calc(22px + env(safe-area-inset-bottom)); }
+  .sheet h3 { font-size: 1.05rem; margin-bottom: 14px; }
+  .opt { display: flex; align-items: center; gap: 12px; padding: 13px; border-radius: 12px; background: var(--card2); margin-bottom: 8px; cursor: pointer; }
+  .opt .ic { font-size: 1.3rem; }
+  .opt .tx { flex: 1; font-size: .9rem; font-weight: 600; }
+  .opt .sub2 { display: block; font-size: .75rem; color: var(--sub); font-weight: 400; }
+  .close { background: none; border: none; color: var(--sub); font-size: .9rem; cursor: pointer; padding: 6px; float: right; }
+  .field { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,.12);
+    background: var(--card2); color: var(--text); font-size: .95rem; margin-bottom: 10px; }
+  .btn { width: 100%; padding: 13px; border: none; border-radius: 12px; cursor: pointer; font-size: .95rem; font-weight: 700;
+    background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #0d0f14; }
+  .btn.ghost { background: var(--card2); color: var(--text); margin-top: 8px; }
+  .progress { height: 5px; background: rgba(255,255,255,.1); border-radius: 3px; margin: 10px 0; overflow: hidden; display: none; }
+  .progress .fill { height: 100%; width: 0%; background: var(--ok); transition: width .3s; }
+  .msg { font-size: .82rem; color: var(--ok); margin-top: 8px; min-height: 1em; }
+  .msg.err { color: var(--err); }
+  .spin { animation: spin 4s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  input[type=file] { display: none; }
+  .pl-pick { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+  .pl-pick span { padding: 6px 12px; border-radius: 999px; background: var(--card2); font-size: .8rem; cursor: pointer; }
+  .pl-pick span.sel { background: var(--accent); color: #0d0f14; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🎧 Custom Music Player</h1>
+    <p id="sub">Toca ▶ y a volar</p>
+  </header>
+  <div class="tabs">
+    <button id="tab-tracks" class="on">Canciones</button>
+    <button id="tab-playlists">Listas</button>
+  </div>
+  <div id="list"></div>
+</div>
+
+<button class="add-btn" id="addBtn" title="Añadir">＋</button>
+
+<div class="player">
+  <div class="now" id="now">Sin canción</div>
+  <div class="times"><span id="cur">0:00</span><span id="tot">0:00</span></div>
+  <div class="bar" id="bar"><div class="fill" id="fill"></div></div>
+  <div class="btns">
+    <button class="prev" id="prev"><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg></button>
+    <button class="play" id="play" aria-label="Reproducir">
+      <svg class="ic-play" viewBox="0 0 24 24" width="26" height="26" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      <svg class="ic-pause" viewBox="0 0 24 24" width="26" height="26" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+    </button>
+    <button class="next" id="next"><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg></button>
+  </div>
+</div>
+
+<div class="modal" id="modal">
+  <div class="sheet">
+    <button class="close" id="closeModal">✕</button>
+    <h3 id="sheetTitle">Añadir música</h3>
+    <div id="sheetMain">
+      <div class="opt" id="optUpload"><span class="ic">🎵</span><span class="tx">Subir canciones<span class="sub2">mp3, m4a, ogg, flac… (varios a la vez)</span></span></div>
+      <div class="opt" id="optFolder"><span class="ic">📁</span><span class="tx">Subir carpeta<span class="sub2">una carpeta entera de música</span></span></div>
+      <div class="opt" id="optVideo"><span class="ic">🎬</span><span class="tx">Subir vídeo<span class="sub2">se extrae el audio automáticamente</span></span></div>
+      <div class="opt" id="optYoutube"><span class="ic">▶️</span><span class="tx">Enlace de YouTube<span class="sub2">se descarga el audio</span></span></div>
+      <div class="opt" id="optPlaylist"><span class="ic">📃</span><span class="tx">Nueva lista<span class="sub2">crea una playlist con tus canciones</span></span></div>
+    </div>
+    <input type="file" id="fileAudio" multiple accept=".mp3,.m4a,.aac,.ogg,.opus,.flac,.wav,.wma,audio/*">
+    <input type="file" id="fileFolder" multiple webkitdirectory accept="audio/*,.mp3,.m4a,.flac,.ogg,.opus,.wav">
+    <input type="file" id="fileVideo" multiple accept=".mp4,.mov,.mkv,.webm,.avi,.m4v,video/*">
+    <div id="sheetForm" style="display:none">
+      <input class="field" id="ytUrl" type="url" placeholder="https://www.youtube.com/watch?v=…">
+      <input class="field" id="ytTitle" type="text" placeholder="Título (opcional)">
+      <input class="field" id="ytArtist" type="text" placeholder="Artista (opcional)">
+      <button class="btn" id="ytGo">Descargar audio</button>
+      <div class="progress" id="prog"><div class="fill" id="progFill"></div></div>
+      <div class="msg" id="msg"></div>
+      <button class="btn ghost" id="backMain">← Volver</button>
+    </div>
+    <div id="plForm" style="display:none">
+      <input class="field" id="plName" type="text" placeholder="Nombre de la lista">
+      <button class="btn" id="plCreate">Crear lista</button>
+      <div class="msg" id="msgPl"></div>
+      <button class="btn ghost" id="backMain2">← Volver</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const audio = new Audio();
+let LIB = {tracks: [], playlists: []};
+let queue = [], idx = 0, playing = false;
+let view = "tracks", curPl = null;
+const fmt = s => { if (!isFinite(s)) return "0:00"; const m = Math.floor(s/60), r = Math.floor(s%60); return m + ":" + String(r).padStart(2,"0"); };
+
+async function refresh() {
+  const r = await fetch("/api/library");
+  LIB = await r.json();
+}
+
+function thumbOf(t) { return t.thumb ? `/api/thumbs/${t.id}` : "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 42 42"><rect width="42" height="42" rx="10" fill="#1e2230"/><text x="21" y="28" font-size="18" text-anchor="middle">🎵</text></svg>'); }
+
+function render() {
+  const list = $("list");
+  list.innerHTML = "";
+  const items = view === "tracks" ? LIB.tracks : (curPl ? LIB.tracks.filter(t => curPl.tracks.includes(t.id)) : LIB.playlists);
+  if (view === "playlists" && !curPl) {
+    if (!LIB.playlists.length) list.innerHTML = '<div class="empty">Sin listas aún.<br>Pulsa ＋ y crea una.</div>';
+    LIB.playlists.forEach(pl => {
+      const el = document.createElement("div");
+      el.className = "pl-row";
+      el.innerHTML = `<span class="icon">📃</span><div class="meta"><div class="n">${esc(pl.name)}</div><div class="c">${pl.tracks.length} canciones</div></div><button class="del">🗑</button>`;
+      el.querySelector(".del").onclick = async e => { e.stopPropagation(); await fetch(`/api/playlists/${pl.id}`, {method:"DELETE"}); await refresh(); render(); };
+      el.onclick = () => { curPl = pl; view = "playlists"; render(); };
+      list.appendChild(el);
+    });
+    return;
+  }
+  if (!items.length) {
+    list.innerHTML = view === "tracks"
+      ? '<div class="empty">No hay canciones.<br>Pulsa el botón ＋ para añadir.</div>'
+      : '<div class="empty">Lista vacía.</div>';
+    return;
+  }
+  items.forEach(t => {
+    const el = document.createElement("div");
+    el.className = "track" + (queue[idx] === t ? " active" : "");
+    el.innerHTML = `<img class="thumb" src="${thumbOf(t)}"><div class="meta"><div class="t">${esc(t.title)}</div><div class="a">${esc(t.artist || "")}</div></div>
+      <div class="eq"><span></span><span></span><span></span></div><div class="dur">${fmt(t.dur)}</div>
+      <button class="del" title="Borrar">🗑</button>`;
+    el.querySelector(".del").onclick = async e => {
+      e.stopPropagation();
+      if (!confirm("¿Borrar esta canción?")) return;
+      await fetch(`/api/tracks/${t.id}`, {method:"DELETE"});
+      await refresh(); render();
+    };
+    el.onclick = () => {
+      queue = view === "tracks" ? LIB.tracks : LIB.tracks.filter(x => curPl.tracks.includes(x.id));
+      idx = queue.findIndex(x => x.id === t.id);
+      load(); play();
+    };
+    list.appendChild(el);
+  });
+}
+const esc = s => (s||"").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+function load() {
+  const t = queue[idx];
+  if (!t) return;
+  audio.src = `/api/tracks/${t.id}/file`;
+  audio.load();
+  $("now").innerHTML = esc(t.title) + `<small>${esc(t.artist || "")} · ${idx+1}/${queue.length}</small>`;
+  render(); update();
+}
+function play() { audio.play().then(() => { $("play").classList.add("is-playing"); }).catch(() => {}); }
+function pause() { audio.pause(); $("play").classList.remove("is-playing"); }
+function toggle() { audio.paused ? play() : pause(); }
+function next() { if (queue.length) { idx = (idx+1) % queue.length; load(); play(); } }
+function prev() { if (queue.length) { idx = (idx-1+queue.length) % queue.length; load(); play(); } }
+function update() { $("cur").textContent = fmt(audio.currentTime); $("tot").textContent = fmt(audio.duration); $("fill").style.width = (audio.duration ? audio.currentTime/audio.duration*100 : 0) + "%"; }
+
+audio.addEventListener("ended", next);
+audio.addEventListener("timeupdate", update);
+audio.addEventListener("loadedmetadata", update);
+audio.addEventListener("play", () => $("play").classList.add("is-playing"));
+audio.addEventListener("pause", () => $("play").classList.remove("is-playing"));
+$("play").onclick = toggle; $("next").onclick = next; $("prev").onclick = prev;
+$("bar").onclick = e => { const r = $("bar").getBoundingClientRect(); audio.currentTime = (e.clientX - r.left) / r.width * (audio.duration || 0); };
+
+// tabs
+$("tab-tracks").onclick = () => { view = "tracks"; curPl = null; $("tab-tracks").classList.add("on"); $("tab-playlists").classList.remove("on"); render(); };
+$("tab-playlists").onclick = () => { view = "playlists"; curPl = null; $("tab-tracks").classList.remove("on"); $("tab-playlists").classList.add("on"); render(); };
+
+// modal
+const modal = $("modal");
+function showSheet(title) { $("sheetTitle").textContent = title; modal.classList.add("show"); }
+$("addBtn").onclick = () => showSheet("Añadir música");
+$("closeModal").onclick = () => { modal.classList.remove("show"); $("sheetMain").style.display = ""; $("sheetForm").style.display = "none"; $("plForm").style.display = "none"; };
+modal.onclick = e => { if (e.target === modal) $("closeModal").onclick(); };
+
+function resetForm() { $("sheetMain").style.display = ""; $("sheetForm").style.display = "none"; $("plForm").style.display = "none"; $("msg").textContent = ""; $("msg").className = "msg"; $("prog").style.display = "none"; }
+
+function doUpload(input, label, isFolder) {
+  const files = [...input.files];
+  if (!files.length) return;
+  resetForm(); showSheet(label);
+  const fd = new FormData();
+  files.forEach(f => fd.append("files", f, isFolder ? f.webkitRelativePath || f.name : f.name));
+  $("prog").style.display = "block";
+  const xhr = new XMLHttpRequest();
+  xhr.open("POST", "/api/upload");
+  xhr.upload.onprogress = e => { if (e.lengthComputable) $("progFill").style.width = (e.loaded/e.total*100) + "%"; };
+  xhr.onload = async () => {
+    $("prog").style.display = "none";
+    try {
+      const r = JSON.parse(xhr.responseText);
+      const n = (r.added||[]).length, errs = (r.errors||[]).length;
+      $("msg").textContent = n ? `✅ ${n} canción(es) añadida(s)` : "Sin añadir";
+      $("msg").classList.add(errs ? "err" : "");
+      if (errs) $("msg").textContent += ` · ${errs} con error`;
+    } catch(e) { $("msg").textContent = "Error al subir"; $("msg").classList.add("err"); }
+    input.value = "";
+    await refresh(); render();
+    setTimeout(() => modal.classList.remove("show"), 1600);
+  };
+  xhr.onerror = () => { $("msg").textContent = "Error de red"; $("msg").classList.add("err"); };
+  xhr.send(fd);
+}
+
+$("optUpload").onclick = () => $("fileAudio").click();
+$("optFolder").onclick = () => $("fileFolder").click();
+$("optVideo").onclick = () => $("fileVideo").click();
+$("fileAudio").onchange = e => doUpload(e.target, "Subiendo canciones…");
+$("fileFolder").onchange = e => doUpload(e.target, "Subiendo carpeta…");
+$("fileVideo").onchange = e => doUpload(e.target, "Subiendo vídeos…");
+
+// YouTube
+$("optYoutube").onclick = () => { resetForm(); $("sheetForm").style.display = "block"; showSheet("Añadir desde YouTube"); setTimeout(() => $("ytUrl").focus(), 300); };
+$("backMain").onclick = () => { resetForm(); showSheet("Añadir música"); };
+$("backMain2").onclick = () => { resetForm(); showSheet("Añadir música"); };
+$("ytGo").onclick = async () => {
+  const url = $("ytUrl").value.trim();
+  if (!url) { $("msg").textContent = "Pega un enlace de YouTube"; $("msg").classList.add("err"); return; }
+  $("ytGo").disabled = true; $("msg").textContent = "Descargando… puede tardar 1-2 min"; $("msg").className = "msg";
+  $("prog").style.display = "block"; $("progFill").style.width = "20%";
+  const spinner = setInterval(() => { const w = parseFloat($("progFill").style.width); if (w < 90) $("progFill").style.width = (w + 4) + "%"; }, 1500);
+  try {
+    const r = await fetch("/api/youtube", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({url, title: $("ytTitle").value, artist: $("ytArtist").value})});
+    const d = await r.json();
+    clearInterval(spinner);
+    if (!r.ok) { $("msg").textContent = "Error: " + (d.error||"desconocido").slice(0,140); $("msg").classList.add("err"); }
+    else { $("progFill").style.width = "100%"; $("msg").textContent = "✅ Añadida: " + d.track.title; $("msg").className = "msg"; }
+    await refresh(); render();
+    setTimeout(() => { modal.classList.remove("show"); $("ytGo").disabled = false; resetForm(); }, 1800);
+  } catch(e) {
+    clearInterval(spinner); $("msg").textContent = "Error de red"; $("msg").classList.add("err"); $("ytGo").disabled = false;
+  }
+};
+
+// playlist
+$("optPlaylist").onclick = () => { resetForm(); $("plForm").style.display = "block"; showSheet("Nueva lista"); };
+$("plCreate").onclick = async () => {
+  const name = $("plName").value.trim();
+  if (!name) { $("msgPl").textContent = "Pon un nombre"; $("msgPl").classList.add("err"); return; }
+  const r = await fetch("/api/playlists", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({name})});
+  $("msgPl").textContent = "✅ Lista creada"; $("msgPl").className = "msg";
+  await refresh(); render();
+  setTimeout(() => { modal.classList.remove("show"); resetForm(); $("plName").value = ""; }, 1400);
+};
+
+(async function init() {
+  await refresh();
+  render();
+})();
+</script>
+</body>
+</html>
