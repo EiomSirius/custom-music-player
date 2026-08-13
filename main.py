@@ -180,13 +180,33 @@ class YTReq(BaseModel):
     title: Optional[str] = None
     artist: Optional[str] = None
 
+# ---------- Reproducción con caché + seek (descarga parcial, barra funcional) ----------
+import hashlib
+CACHE_DIR = Path("/tmp/ytcache")
+CACHE_DIR.mkdir(exist_ok=True)
+
+@app.get("/api/youtube/play")
+def yt_play(url: str = "", title: str = ""):
+    """Descarga a caché en /tmp y sirve con soporte Range → el navegador puede saltar (seek)."""
+    if not url:
+        raise HTTPException(400, "falta url")
+    key = hashlib.md5(url.encode()).hexdigest()[:12]
+    out = CACHE_DIR / f"{key}.mp4"
+    if not out.exists():
+        r = subprocess.run(
+            ["yt-dlp", "--proxy", YT_PROXY, "--js-runtimes", "node",
+             "--remote-components", "ejs:github", "--extractor-args", YT_EXTRACTOR_ARGS,
+             "--no-part", "-f", "18/bestaudio", "-o", str(out), url],
+            capture_output=True, text=True, timeout=600)
+        if r.returncode != 0 or not out.exists():
+            raise HTTPException(502, "no se pudo descargar: " + (r.stderr[-200:] if r.stderr else "desconocido"))
+    return FileResponse(out, media_type="audio/mp4",
+                        headers={"Accept-Ranges": "bytes"})
+
 # ---------- Streaming en vivo de YouTube (sin descargar) ----------
 @app.get("/api/youtube/stream")
 def yt_stream(url: str = "", title: str = ""):
     """Transcodifica en vivo: yt-dlp → ffmpeg → mp3 por HTTP. No toca el disco."""
-    if not url:
-        raise HTTPException(400, "falta url")
-    import asyncio
 
     def gen():
         yt = subprocess.Popen(
