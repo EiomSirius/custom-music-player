@@ -142,8 +142,7 @@
       <input class="field" id="ytUrl" type="url" placeholder="https://www.youtube.com/watch?v=…">
       <input class="field" id="ytTitle" type="text" placeholder="Título (opcional)">
       <input class="field" id="ytArtist" type="text" placeholder="Artista (opcional)">
-      <button class="btn" id="ytPlay">▶ Reproducir (con barra de progreso)</button>
-      <button class="btn ghost" id="ytStream">⚡ Streaming directo (sin espera, sin saltar)</button>
+      <button class="btn" id="ytPlay">▶ Reproducir</button>
       <button class="btn ghost" id="ytGo">💾 Descargar y guardar</button>
       <div class="progress" id="prog"><div class="fill" id="progFill"></div></div>
       <div class="msg" id="msg"></div>
@@ -311,24 +310,7 @@ $("ytPlay").onclick = async () => {
   setTimeout(() => { $("ytPlay").disabled = false; resetForm(); $("prog").style.display = "none"; }, 900);
 };
 // YouTube — streaming en vivo (sin descargar)
-$("ytStream").onclick = async () => {
-  const url = $("ytUrl").value.trim();
-  if (!url) { $("msg").textContent = "Pega un enlace de YouTube"; $("msg").classList.add("err"); return; }
-  const title = $("ytTitle").value.trim() || "YouTube (streaming)";
-  const artist = $("ytArtist").value.trim() || "YouTube";
-  $("msg").textContent = "Conectando…"; $("msg").className = "msg";
-  $("ytStream").disabled = true;
-  try {
-    queue = [{id: "stream", title, artist, dur: 0, source: "stream", streamUrl: "/api/youtube/stream?url=" + encodeURIComponent(url)}];
-    idx = 0; load(); play();
-    $("msg").textContent = "✅ Reproduciendo en directo"; $("msg").className = "msg";
-    modal.classList.remove("show");
-    setTimeout(() => { $("ytStream").disabled = false; resetForm(); }, 600);
-  } catch(e) {
-    $("msg").textContent = "No se pudo conectar"; $("msg").classList.add("err");
-    $("ytStream").disabled = false;
-  }
-};
+// (eliminado: el modo "Reproducir" ya hace streaming con barra; el stream puro sobra)
 $("backMain").onclick = () => { resetForm(); showSheet("Añadir música"); };
 $("backMain2").onclick = () => { resetForm(); showSheet("Añadir música"); };
 $("ytGo").onclick = async () => {
