@@ -15,7 +15,7 @@ os.makedirs(THUMBS, exist_ok=True)
 
 # YouTube descarga: receta WARP + PO + formato 18 (ver skill yt-dlp-media-download)
 YT_PROXY = os.environ.get("YT_PROXY", "socks5://85.208.48.210:1080")
-YT_EXTRACTOR_ARGS = "youtube:player_client=mweb,web,tv_downgraded"
+YT_EXTRACTOR_ARGS = "youtube:player_client=tv,web,mweb"
 
 def load_lib():
     if LIB.exists():

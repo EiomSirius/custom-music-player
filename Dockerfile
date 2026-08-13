@@ -1,12 +1,13 @@
 FROM python:3.13-slim
 
-# ffmpeg para extraer audio de vídeos + node para el solver JS de yt-dlp (challenges de YouTube)
+# ffmpeg para extraer audio de vídeos + node (≥22, yt-dlp marca 20 como unsupported) para el solver JS
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    nodejs \
-    npm \
     curl \
     ca-certificates \
+    gnupg \
+    && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # yt-dlp actualizado
